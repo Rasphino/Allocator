@@ -29,6 +29,8 @@ namespace MyLib {
         // Release block of storage
         void deallocate(char* ptr, size_t n);
 
+        void deallocateAll();
+
     private:
         const size_t BLOCK_SIZE;
         size_t currentBlockPos = 0, currentAllocSize = 0;
@@ -86,6 +88,11 @@ namespace MyLib {
     }
 
     void MemoryPool::deallocate(char* ptr, size_t n) {}
+
+    void MemoryPool::deallocateAll() {
+        currentBlockPos = 0;
+        availableBlocks.splice(availableBlocks.begin(), usedBlocks);
+    }
 
 }
 
