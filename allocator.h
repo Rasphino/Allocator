@@ -64,12 +64,12 @@ namespace MyLib {
 
     template<class T>
     typename allocator<T>::pointer allocator<T>::allocate(allocator::size_type n, allocator::const_pointer hint) {
-        return reinterpret_cast<T*>(MemoryPool<T>::getInstance().allocate(n * sizeof(T)));
+        return reinterpret_cast<T*>(MemoryPool::getInstance().allocate(n * sizeof(T)));
     }
 
     template<class T>
     void allocator<T>::deallocate(T* p, size_t n) {
-        MemoryPool<T>::getInstance().deallocate(reinterpret_cast<char*>(p), n);
+        MemoryPool::getInstance().deallocate(reinterpret_cast<char*>(p), n);
     }
 
 }

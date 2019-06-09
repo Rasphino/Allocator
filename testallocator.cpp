@@ -92,7 +92,7 @@ protected:
     int m_Y;
 };
 
-#define TESTSIZE 50000
+#define TESTSIZE 200000
 
 int main() {
     auto start = std::chrono::steady_clock::now();
