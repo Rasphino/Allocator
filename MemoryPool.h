@@ -6,9 +6,11 @@
 #define ALLOCATOR_MEMORYPOOL_H
 
 #include <cstddef>
+#include <iostream>
+#include <list>
 
 namespace MyLib {
-    template<typename T>
+
     class MemoryPool {
     public:
         MemoryPool();
@@ -24,93 +26,97 @@ namespace MyLib {
         void* allocate(size_t size);
 
         // Release block of storage
-        void deallocate(char* ptr, size_t n);
+        void deallocate(char* ptr, size_t n, size_t size);
 
     private:
-        static constexpr size_t BLOCK_SIZE = (sizeof(T) > 4096) ? (sizeof(T) / 4096 + 3) * 4096 : 4096;
+        static constexpr size_t BLOCK_SIZE = 262144;
 
-        struct FreeNode {
-            char* p;
-            size_t size;
-            FreeNode* next;
-        };
-
-        struct Chunk {
-            char* data;
-            size_t size;
-            Chunk* next;
-            FreeNode* freeList;
-        };
-
-        Chunk* currentBlock;
+        std::list<void*> freeList4Byte, freeList8Byte, usedBlock;
+        std::list<std::pair<void*, int>> freeListEtcByte;
+        char *currPos = nullptr, *lastPos = nullptr;
 
         void allocateBlock(size_t n);
     };
 
-    template<typename T>
-    MemoryPool<T>::MemoryPool() {
-        currentBlock = nullptr;
+    MemoryPool::MemoryPool() {}
+
+    MemoryPool::~MemoryPool() {
+        for (const auto& block : usedBlock) {
+            free(block);
+        }
     }
 
-    template<typename T>
-    MemoryPool<T>::~MemoryPool() {}
-
-    template<typename T>
-    MemoryPool<T>& MemoryPool<T>::getInstance() {
-        static MemoryPool<T> instance;
+    MemoryPool& MemoryPool::getInstance() {
+        static MemoryPool instance;
         return instance;
     }
 
-    template<typename T>
-    void* MemoryPool<T>::allocate(size_t size) {
-        if (currentBlock != nullptr) {
-            FreeNode* p = currentBlock->freeList;
-            while (p != nullptr) {
-                if (p->size >= size) {
-                    void* res = reinterpret_cast<void*>(p->p);
-                    p->p += size;
-                    p->size -= size;
-                    return res;
+    void* MemoryPool::allocate(size_t size) {
+        if (size == 4 && !freeList4Byte.empty()) {
+            auto itr = freeList4Byte.begin();
+            freeList4Byte.erase(itr);
+            printf("reuse %p for 4 byte\n", itr);
+            return *itr;
+        } else if (size == 8 && !freeList8Byte.empty()) {
+            auto itr = freeList4Byte.begin();
+            freeList4Byte.erase(itr);
+            printf("reuse %p for 8 byte\n", itr);
+            return *itr;
+        } else if (size > 8) {
+            for (auto itr = freeListEtcByte.begin(); itr != freeListEtcByte.end(); ++itr) {
+                if (itr->second >= size + 4) {
+                    size_t res = itr->second - size;
+                    if (res == 4) {
+                        freeList4Byte.push_back(reinterpret_cast<char*>(itr->first) + size);
+                    } else if (res == 8) {
+                        freeList8Byte.push_back(reinterpret_cast<char*>(itr->first) + size);
+                    } else if (res > 8) {
+                        freeListEtcByte.emplace_back(reinterpret_cast<char*>(itr->first) + size, res);
+                    }
+                } else if (itr->second == size) {
+                    freeListEtcByte.erase(itr);
+                    return itr->first;
                 }
-                p = p->next;
             }
         }
 
-        int n = size / BLOCK_SIZE + 1;
-        allocateBlock(n);
-        void* res = reinterpret_cast<void*>(currentBlock->freeList->p);
-        currentBlock->freeList->p += size;
-        currentBlock->freeList->size -= size;
-        return res;
+        if (currPos + size > lastPos) {
+            int n = size / BLOCK_SIZE + 1;
+            allocateBlock(n);
+        }
+
+        void* p = currPos;
+        currPos = currPos + size;
+        return p;
     }
 
-    template<typename T>
-    void MemoryPool<T>::deallocate(char* ptr, size_t n) {
-        auto newListNode = new FreeNode;
-        newListNode->next = currentBlock->freeList;
-        currentBlock->freeList = newListNode;
-        newListNode->p = ptr;
-        newListNode->size = n * sizeof(T);
+    void MemoryPool::deallocate(char* ptr, size_t n, size_t size) {
+        size_t res = size * n;
+        if (res == 4) {
+            freeList4Byte.push_back(ptr);
+            printf("add %p for 4 byte\n", ptr);
+        } else if (res == 8) {
+            freeList8Byte.push_back(ptr);
+            printf("add %p for 8 byte\n", ptr);
+        } else if (res > 8) {
+            freeListEtcByte.emplace_back(ptr, res);
+            printf("add %p for %ld byte\n", ptr, res);
+        }
     }
 
-    template<typename T>
-    void MemoryPool<T>::allocateBlock(size_t n) {
-        auto newBlock = new Chunk;
-        newBlock->size = n * BLOCK_SIZE / sizeof(T) * sizeof(T);
-        newBlock->data = reinterpret_cast<char*>(::operator new(newBlock->size));
-        newBlock->next = currentBlock;
-
-        auto newListNode = new FreeNode;
-        if (currentBlock == nullptr)
-            newListNode->next = nullptr;
-        else
-            newListNode->next = currentBlock->freeList;
-        newListNode->p = newBlock->data;
-        newListNode->size = newBlock->size;
-        newBlock->freeList = newListNode;
-
-        if (currentBlock != nullptr) currentBlock->freeList = nullptr;
-        currentBlock = newBlock;
+    void MemoryPool::allocateBlock(size_t n) {
+        size_t res = lastPos - currPos;
+        if (res == 4) {
+            freeList4Byte.push_back(currPos);
+        } else if (res == 8) {
+            freeList8Byte.push_back(currPos);
+        } else if (res > 8) {
+            freeListEtcByte.emplace_back(currPos, res);
+        }
+        currPos = reinterpret_cast<char*>(::operator new(n* BLOCK_SIZE));
+        lastPos = currPos + n * BLOCK_SIZE;
+        usedBlock.push_back(currPos);
+        printf("new block %p for %ld byte\n", currPos, n * BLOCK_SIZE);
     }
 }
 
