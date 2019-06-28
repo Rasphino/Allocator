@@ -2,8 +2,8 @@
 // Created by rasp on 19-6-9.
 //
 
-#ifndef ALLOCATOR_MEMORYPOOL_H
-#define ALLOCATOR_MEMORYPOOL_H
+#ifndef ALLOCATOR_REGIONMEMORYPOOL_H
+#define ALLOCATOR_REGIONMEMORYPOOL_H
 
 #include <cstddef>
 #include <cstdint>
@@ -12,46 +12,47 @@
 
 namespace MyLib {
 
-    class MemoryPool {
+    class RegionMemoryPool {
     public:
-        MemoryPool(size_t blockSize = 262144) : BLOCK_SIZE(blockSize) {}
-        ~MemoryPool();
+        RegionMemoryPool(size_t blockSize = 262144) : BLOCK_SIZE(blockSize) {}
 
-        static MemoryPool& getInstance();
+        ~RegionMemoryPool();
+
+        static RegionMemoryPool &getInstance();
 
         // no copies
-        MemoryPool(const MemoryPool&) = delete;
-        void operator=(const MemoryPool&) = delete;
+        RegionMemoryPool(const RegionMemoryPool &) = delete;
+        void operator=(const RegionMemoryPool &) = delete;
 
         // Allocate block of storage
-        void* allocate(size_t size);
+        void *allocate(size_t size);
 
         // Release block of storage
-        void deallocate(char* ptr, size_t n);
+        void deallocate(char *ptr, size_t n);
 
         void deallocateAll();
 
     private:
         const size_t BLOCK_SIZE;
         size_t currentBlockPos = 0, currentAllocSize = 0;
-        uint8_t* currentBlock = nullptr;
-        std::list<std::pair<size_t, uint8_t*>> usedBlocks, availableBlocks;
+        uint8_t *currentBlock = nullptr;
+        std::list<std::pair<size_t, uint8_t *>> usedBlocks, availableBlocks;
     };
 
-    MemoryPool::~MemoryPool() {
+    RegionMemoryPool::~RegionMemoryPool() {
         free(currentBlock);
-        for (auto& block : usedBlocks)
+        for (auto &block : usedBlocks)
             free(block.second);
-        for (auto& block : availableBlocks)
+        for (auto &block : availableBlocks)
             free(block.second);
     }
 
-    MemoryPool& MemoryPool::getInstance() {
-        static MemoryPool instance;
+    RegionMemoryPool &RegionMemoryPool::getInstance() {
+        static RegionMemoryPool instance;
         return instance;
     }
 
-    void* MemoryPool::allocate(size_t nBytes) {
+    void *RegionMemoryPool::allocate(size_t nBytes) {
         // 对齐
         const int align = alignof(std::max_align_t);
         nBytes = (nBytes + align - 1) & ~(align - 1);
@@ -77,23 +78,23 @@ namespace MyLib {
             // 都不满足则分配新块
             if (!currentBlock) {
                 currentAllocSize = std::max(nBytes, BLOCK_SIZE);
-                currentBlock = reinterpret_cast<uint8_t*>(::operator new(currentAllocSize));
+                currentBlock = reinterpret_cast<uint8_t *>(::operator new(currentAllocSize));
             }
             currentBlockPos = 0;
         }
 
-        void* ret = currentBlock + currentBlockPos;
+        void *ret = currentBlock + currentBlockPos;
         currentBlockPos += nBytes;
         return ret;
     }
 
-    void MemoryPool::deallocate(char* ptr, size_t n) {}
+    void RegionMemoryPool::deallocate(char *ptr, size_t n) {}
 
-    void MemoryPool::deallocateAll() {
+    void RegionMemoryPool::deallocateAll() {
         currentBlockPos = 0;
         availableBlocks.splice(availableBlocks.begin(), usedBlocks);
     }
 
 }
 
-#endif // ALLOCATOR_MEMORYPOOL_H
+#endif //ALLOCATOR_REGIONMEMORYPOOL_H
